@@ -183,6 +183,7 @@ let activeTexture = placeholderTex;
 
 // --- UI bindings
 const fileInput = document.getElementById('file');
+const file2Input = document.getElementById('file2');
 const swirlEl = document.getElementById('swirl');
 const swirlOut = document.getElementById('swirlOut');
 const waveEl = document.getElementById('wave');
@@ -197,6 +198,7 @@ const downloadBtn = document.getElementById('download');
 // new AI alter button + status
 const aiBtn = document.getElementById('aiAlter');
 let lastFile = null; // store selected file reference
+let lastFile2 = null;
 
 // update file input handler to keep lastFile
 fileInput.addEventListener('change', (e)=>{
@@ -221,6 +223,12 @@ fileInput.addEventListener('change', (e)=>{
     activeTexture = createTextureFromImage(tmp);
   };
   img.src = URL.createObjectURL(f);
+});
+
+// new handler for second (hidden) image
+file2Input.addEventListener('change', (e)=>{
+  const f = e.target.files && e.target.files[0];
+  lastFile2 = f || lastFile2;
 });
 
 // Randomize button: picks pleasing combinations
@@ -249,7 +257,11 @@ downloadBtn.addEventListener('click', ()=>{
 // Shows a 10s loading state (websim.imageGen takes ~10s per docs).
 aiBtn.addEventListener('click', async ()=>{
   if(!lastFile){
-    alert('Please choose an image first.');
+    alert('Please choose a base image first.');
+    return;
+  }
+  if(!lastFile2){
+    alert('Please choose a hidden image to embed.');
     return;
   }
   aiBtn.disabled = true;
@@ -263,17 +275,17 @@ aiBtn.addEventListener('click', async ()=>{
       r.readAsDataURL(file);
     });
     const dataUrl = await fileToDataUrl(lastFile);
+    const hiddenDataUrl = await fileToDataUrl(lastFile2);
 
     // Prompt instructs the model to produce a modified version of the input image that shifts every other pixel
     // preserving subject and colors but introducing alternating-pixel offsets so the shader amplifies the illusion.
-    const prompt = `Take the provided image and produce a visually identical composition but with a deterministic "alternating pixel displacement" effect: shift every other column of pixels by a small amount (1–4 pixels) alternately up/down (or left/right) across the image to create a subtle checkerboard displacement. Preserve subject, color, and high-quality detail; output in PNG, same dimensions, no added borders or overlays. This modified image will be used with a swirl/wave shader to amplify the illusion.`;
+    const prompt = `Combine the two provided images into ONE single high-quality PNG where the first image remains the visible composition but conceals the second image inside it via a subtle deterministic "alternating pixel displacement" steganography: shift every other column/row of pixels (1–4 pixel displacement) in a repeatable checkerboard pattern and encode the hidden image so it is barely visible normally but becomes revealed or strongly amplified when the supplied swirl/wave shader (which applies radial swirl, waves, and symmetry) is run. Preserve colors and subject fidelity; do not add borders, overlays, or separate layers — output a single flattened PNG matching the input dimensions.`;
 
     // call websim.imageGen per provided API; include the input image as image_inputs
     // show an artificial 10s progress indicator by awaiting the call (websim.imageGen ~10s)
     const result = await websim.imageGen({
       prompt,
-      image_inputs: [{ url: dataUrl }],
-      // request same aspect (if supported) - otherwise API will return an image url
+      image_inputs: [{ url: dataUrl }, { url: hiddenDataUrl }],
     });
 
     if(result && result.url){
