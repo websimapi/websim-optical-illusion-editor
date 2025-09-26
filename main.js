@@ -194,14 +194,14 @@ const skewEl = document.getElementById('skew');
 const skewOut = document.getElementById('skewOut');
 const randomBtn = document.getElementById('random');
 const downloadBtn = document.getElementById('download');
+// new AI alter button + status
+const aiBtn = document.getElementById('aiAlter');
+let lastFile = null; // store selected file reference
 
-swirlEl.addEventListener('input', ()=> swirlOut.value =(parseFloat(swirlEl.value)).toFixed(2));
-waveEl.addEventListener('input', ()=> waveOut.value = parseFloat(waveEl.value).toFixed(3));
-tilesEl.addEventListener('input', ()=> tilesOut.value = tilesEl.value);
-skewEl.addEventListener('input', ()=> skewOut.value = parseFloat(skewEl.value).toFixed(3));
-
+// update file input handler to keep lastFile
 fileInput.addEventListener('change', (e)=>{
   const f = e.target.files && e.target.files[0];
+  lastFile = f || lastFile;
   if(!f) return;
   const img = new Image();
   img.crossOrigin = 'anonymous';
@@ -245,6 +245,63 @@ downloadBtn.addEventListener('click', ()=>{
   a.click();
 });
 
+// AI Alter: send chosen image to websim.imageGen with instruction to "shift every other pixel".
+// Shows a 10s loading state (websim.imageGen takes ~10s per docs).
+aiBtn.addEventListener('click', async ()=>{
+  if(!lastFile){
+    alert('Please choose an image first.');
+    return;
+  }
+  aiBtn.disabled = true;
+  aiBtn.textContent = 'Altering...';
+  try {
+    // convert file to data URL
+    const fileToDataUrl = (file) => new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = ()=> res(r.result);
+      r.onerror = rej;
+      r.readAsDataURL(file);
+    });
+    const dataUrl = await fileToDataUrl(lastFile);
+
+    // Prompt instructs the model to produce a modified version of the input image that shifts every other pixel
+    // preserving subject and colors but introducing alternating-pixel offsets so the shader amplifies the illusion.
+    const prompt = `Take the provided image and produce a visually identical composition but with a deterministic "alternating pixel displacement" effect: shift every other column of pixels by a small amount (1–4 pixels) alternately up/down (or left/right) across the image to create a subtle checkerboard displacement. Preserve subject, color, and high-quality detail; output in PNG, same dimensions, no added borders or overlays. This modified image will be used with a swirl/wave shader to amplify the illusion.`;
+
+    // call websim.imageGen per provided API; include the input image as image_inputs
+    // show an artificial 10s progress indicator by awaiting the call (websim.imageGen ~10s)
+    const result = await websim.imageGen({
+      prompt,
+      image_inputs: [{ url: dataUrl }],
+      // request same aspect (if supported) - otherwise API will return an image url
+    });
+
+    if(result && result.url){
+      // load returned image into texture
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = ()=>{
+        // create temporary canvas to feed texture (keeps sizes reasonable)
+        const tmp = document.createElement('canvas');
+        tmp.width = img.width;
+        tmp.height = img.height;
+        const ctx = tmp.getContext('2d');
+        ctx.drawImage(img,0,0,tmp.width,tmp.height);
+        activeTexture = createTextureFromImage(tmp);
+      };
+      img.src = result.url;
+    } else {
+      alert('AI did not return an image.');
+    }
+  } catch(err){
+    console.error(err);
+    alert('AI alteration failed.');
+  } finally {
+    aiBtn.disabled = false;
+    aiBtn.textContent = 'AI Alter';
+  }
+});
+
 // resize handling
 function resizeCanvasToDisplaySize(){
   const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -282,4 +339,3 @@ function render(time){
   requestAnimationFrame(render);
 }
 requestAnimationFrame(render);
-
